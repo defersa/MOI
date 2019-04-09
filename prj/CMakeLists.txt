@@ -1,0 +1,4 @@
+add_subdirectory(cv_histo)
+add_subdirectory(cv_histo_slider)
+add_subdirectory(cv_check)
+add_subdirectory(cv_idz)
