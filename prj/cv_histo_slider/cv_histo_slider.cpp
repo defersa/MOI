@@ -20,7 +20,7 @@ double beta;
 Mat notResized;
 Mat original;
 Mat changed;
-Mat histogramm;
+Mat graph;
 Mat dst;
 
 /**
@@ -50,73 +50,43 @@ void Contrast(int step)
 	cv::merge(rgb, changed);
 }
 
-void Histo() {
-	int color_r[256];
-	int color_g[256];
-	int color_b[256];
-	int max = 0;
+void Graph(int step) {
 
-	for (int i = 0; i < 256; i++) {
-		color_r[i] = 0;
-		color_g[i] = 0;
-		color_b[i] = 0;
+	Mat outputImage(266, 266, CV_8UC3, Scalar(255, 255, 255));
+
+	rectangle(
+		outputImage,
+		Point(5, 5),
+		Point(6, 261),
+		Scalar(0, 0, 0),
+		-1
+	);
+	rectangle(
+		outputImage,
+		Point(5, 261),
+		Point(261, 260),
+		Scalar(0, 0, 0),
+		-1
+	);
+	if (step > 100) {
+		double level = (step - 100) * 128 / 100;
+		line(
+			outputImage,
+			Point(level + 5, 261),
+			Point(261 - level, 5),
+			Scalar(255, 0, 0)
+		);
+	} else {
+		double level = (100 - step) * 128 / 100;
+		line(
+			outputImage,
+			Point(5, 261 - level),
+			Point(261, level + 5),
+			Scalar(0, 0, 255)
+		);
 	}
 
-
-	for (int i = 0; i < changed.rows; i++) {
-		for (int j = 0; j < changed.cols; j++) {
-			color_b[changed.at<Vec3b>(i, j)[0]] += 1;
-			color_g[changed.at<Vec3b>(i, j)[1]] += 1;
-			color_r[changed.at<Vec3b>(i, j)[2]] += 1;
-		}
-	}
-	for (int i = 0; i < 256; i++) {
-		if (max < color_r[i])
-			max = color_r[i];
-		if (max < color_g[i])
-			max = color_g[i];
-		if (max < color_b[i])
-			max = color_b[i];
-	}
-	for (int i = 0; i < 256; i++) {
-		color_r[i] = ceil(255.0 * color_r[i] / max);
-		color_g[i] = ceil(255.0 * color_g[i] / max);
-		color_b[i] = ceil(255.0 * color_b[i] / max);
-	}
-
-	Mat outputImage(512, 512, CV_8UC3, Scalar(0, 0, 0));
-
-
-
-	// histogram
-	for (int i = 0; i < 256; i++) {
-		int buf[] = { color_b[i], color_g[i], color_r[i] };
-		int scal[] = { 0, 0, 0 };
-
-		for (int j = 0; j < 3; j++) {
-
-			int val = 0;
-			int ind = 0;
-
-			for (int k = 0; k < 3; k++) {
-				if (val < buf[k]) {
-					val = buf[k];
-					ind = k;
-				}
-			}
-			buf[ind] = 0;
-			scal[ind] = 255;
-
-			rectangle(
-				outputImage,
-				Point(i * 2, 512),
-				Point(i * 2, 512 - val * 2),
-				Scalar(scal[0], scal[1], scal[2]),
-				-1
-			);
-		}
-	}
-	histogramm = outputImage.clone();
+	graph = outputImage.clone();
 }
 
 void on_trackbar(int, void*)
@@ -126,17 +96,15 @@ void on_trackbar(int, void*)
 	changed = original.clone();
 	
 	Contrast(step);
-	Histo();
-
-//	addWeighted(newimage, alpha, newimage, beta, 0.0, dst);
+	Graph(step);
 
 	hconcat(original, changed, dst);
 
 	imshow("Linear Blend", dst);
 
-	imshow("Histo", histogramm);
+	imshow("Graph", graph);
 
-	moveWindow("Histo", 40, 450);
+	moveWindow("Graph", 40, 450);
 }
 
 
@@ -145,7 +113,7 @@ int main(int argc, char** argv)
 	/// Read image ( same size, same type )
 	notResized = cv::imread(argv[1]);
 
-	if (!notResized.data) { printf("Error loading src1 \n"); return -1; }
+	if (!notResized.data) { printf("Error loading notResized \n"); return -1; }
 
 	original = Mat::zeros(400, 300, CV_8UC3);
 	resize(notResized, original, Size(400, 300) );
