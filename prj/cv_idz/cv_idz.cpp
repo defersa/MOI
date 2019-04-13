@@ -6,13 +6,14 @@
 using namespace std; 
 using namespace cv;
 
-const int sliderMax = 3;
+const int sliderMax = 2;
 int slider;
 
 Mat original;
 Mat changed;
+Mat histogram;
 
-void stepOtsu(vector<int> &s, int level, int levels, vector<double> &his, vector<int> &t, vector<double> &W, vector<double> &M, vector<double> &MK, double MT, double curMax, double *max) {
+void stepOtsu(vector<int> &s, int level, int levels, vector<double> &his, vector<int> &t, vector<double> &W, vector<double> &M, vector<double> &MK, double MT, double curMax, double *max, vector<double> &sumMax) {
 	for (; s[level] < 255; s[level]++) {
 		int i = s[level];
 		W[level] += his[i];
@@ -24,7 +25,7 @@ void stepOtsu(vector<int> &s, int level, int levels, vector<double> &his, vector
 			MK[level + 1] = 0;
 			W[level + 1] = 0;
 
-			stepOtsu(s, level + 1, levels, his, t, W, M, MK, MT, curMax, &*max);
+			stepOtsu(s, level + 1, levels, his, t, W, M, MK, MT, curMax, &*max, sumMax);
 		}
 		else {
 			double Wsum = 0;
@@ -46,6 +47,11 @@ void stepOtsu(vector<int> &s, int level, int levels, vector<double> &his, vector
 			for (int k = 0; k < levels + 1; k++) {
 				curMax += W[k] * (M[k] - MT)*(M[k] - MT);
 			}
+			for (int k = 0; k < levels; k++) {
+				if (sumMax[s[k]] < curMax) {
+					sumMax[s[k]] = curMax;
+				}
+			}
 			if (*max < curMax) {
 				*max = curMax;
 				for (int k = 0; k < levels; k++) {
@@ -57,7 +63,7 @@ void stepOtsu(vector<int> &s, int level, int levels, vector<double> &his, vector
 	}
 }
 
-vector<int> multiOtsu(vector<double> &his, int levels) {
+vector<int> multiOtsu(vector<double> &his, int levels, vector<double> &maxd) {
 
 	vector<int> thresholds(levels, 0);
 	vector<int> s(levels + 1, 0);
@@ -73,30 +79,148 @@ vector<int> multiOtsu(vector<double> &his, int levels) {
 	for (int i = 0; i < 256; i++) {
 		MT += i * his[i];
 	}
-	stepOtsu(s, 0, levels, his, thresholds, W, M, MK, MT, curMax, &max);
+	stepOtsu(s, 0, levels, his, thresholds, W, M, MK, MT, curMax, &max, maxd);
+
+	// normalize
+	for (int i = 0; i < 256; i++) {
+		maxd[i] = maxd[i]*200/ max;
+	}
 
 	return thresholds;
 }
 
+vector<vector<double>> makeLines(vector<int> th, vector<double> his, int levels) {
 
+	vector<vector<double>> lines((levels + 1), vector<double>(256, 0));
+	double MT = 0;
+
+	for (int i = 0; i < 256; i++) {
+		MT += i * his[i];
+	}
+
+	for (int i = 0; i < levels; i++) {
+
+		int start = 0;
+		if (i != 0)
+			start = th[i - 1];
+
+		int end = 256;
+		if (i != levels - 1)
+			end = th[i + 1];
+
+
+		double W = 0;
+		double MK = 0;
+
+		for (int j = start; j < end; j++) {
+			W += his[j];
+			MK += j * his[j];
+
+			double M = MK / W;
+			double d = 0;
+
+			for (int k = start; k <= j; k++) {
+				d += (k - M)*(k - M)*his[k] / W;
+			}
+
+			lines[i + 1][j] += d;
+		}
+
+		for (int j = start; j < end; j++) {
+
+			double M = MK / W;
+			double d = 0;
+
+			for (int k = j; k < end; k++) {
+				d += (k - M)*(k - M)*his[k] / W;
+			}
+
+			W += -his[j];
+			MK += -j * his[j];
+
+			if(lines[i][j] > d || lines[i][j] == 0)
+					lines[i][j] = d;
+		}
+	}
+
+	// normalize
+	double max = 0;
+	for (int i = 0; i < lines.size(); i++) {
+		for (int j = 0; j < 256; j++) {
+			if (lines[i][j] > max) {
+				max = lines[i][j];
+			}
+		}
+	}
+	for (int i = 0; i < lines.size(); i++) {
+		for (int j = 0; j < 256; j++) {
+			lines[i][j] = lines[i][j] * 200 / max;
+		}
+	}
+
+	return lines;
+}
+
+void createHisto(vector<double> &his, double MN, vector<int> &rs, vector<double> dmax, vector<vector<double>> disp) {
+
+	histogram = Mat(256, 256, CV_8UC3, Scalar(255, 255, 255));
+	for (int i = 0; i < 256; i++) {
+		int height = (int)his[i] / MN * 256;
+		rectangle(
+			histogram,
+			Point(i, 256),
+			Point(1 + i, 256 - height),
+			Scalar(128, 128, 128),
+			-1
+		);
+	}
+	for (int i = 0; i < rs.size(); i++) {
+		line(
+			histogram,
+			Point(rs[i], 256),
+			Point(rs[i], 1),
+			Scalar(0, 0, 0),
+			1
+		);
+	}
+	for (int i = 0; i < dmax.size() - 1; i++) {
+		line(
+			histogram,
+			Point(i, 256 - (int)dmax[i]),
+			Point(i + 1, 256 - (int)dmax[i + 1]),
+			Scalar(0, 215, 255),
+			1
+		);
+	}
+	vector<Scalar> colors = { Scalar(255, 0, 0), Scalar(255, 255, 0), Scalar(255, 0, 255), Scalar( 0, 255,  0), Scalar(0, 255,  255) };
+	for (int i = 0; i < disp.size(); i++) {
+		for (int j = 0; j < 255; j++) {
+			line(
+				histogram,
+				Point(j, 256 - (int)disp[i][j]),
+				Point(j + 1, 256 - (int)disp[i][j + 1]),
+				colors[i],
+				1
+			);
+		}
+	}
+}
 
 void on_trackbar(int, void*)
 {
 	int lvl = (int) slider + 1;
 
-	changed = original.clone();
+	changed = Mat::zeros(original.rows, original.cols, CV_8U);
 
 	vector<double> histo(256, 0);
+	vector<double> dmax(256, 0);
 	int pixelCount = changed.rows*changed.cols;
 
 
 	for (int i = 0; i < changed.rows; i++) {
 		for (int j = 0; j < changed.cols; j++) {
-			double gray = changed.at<Vec3b>(i, j)[2] * 0.2126 + changed.at<Vec3b>(i, j)[1] * 0.7152 + changed.at<Vec3b>(i, j)[0] * 0.0722;
-			int intGray = floor(gray);
-			changed.at<Vec3b>(i, j)[0] = intGray;
-			changed.at<Vec3b>(i, j)[1] = intGray;
-			changed.at<Vec3b>(i, j)[2] = intGray;
+			int intGray = floor(original.at<Vec3b>(i, j)[2] * 0.2126 + original.at<Vec3b>(i, j)[1] * 0.7152 + original.at<Vec3b>(i, j)[0] * 0.0722);
+			changed.at<uchar>(i, j) = intGray;
 			histo[intGray] += 1;
 		}
 	}
@@ -111,11 +235,9 @@ void on_trackbar(int, void*)
 		}
 	}
 
-	vector<int> realStep = multiOtsu(histo, lvl);
-
+	vector<int> realStep = multiOtsu(histo, lvl, dmax);
 	vector<int> colorOfGray(lvl, 0);
 	double step = 255 / lvl;
-
 	for (int i = 0; i < lvl; i++) {
 		colorOfGray[i] = (int)(step * (i + 1));
 	}
@@ -125,36 +247,17 @@ void on_trackbar(int, void*)
 			int intGray = 0;
 
 			for (int k = 0; k < lvl; k++) {
-				if (changed.at<Vec3b>(i, j)[0] < realStep[k])
+				if (changed.at<uchar>(i, j) < realStep[k])
 					break;
 				intGray = colorOfGray[k];
 			}
-			changed.at<Vec3b>(i, j)[0] = intGray;
-			changed.at<Vec3b>(i, j)[1] = intGray;
-			changed.at<Vec3b>(i, j)[2] = intGray;
+			changed.at<uchar>(i, j) = intGray;
 		}
 	}
+	
+	vector<vector<double>> disp = makeLines(realStep, histo, lvl);
 
-	Mat histogram(256, 256, CV_8UC3, Scalar(255, 255, 255));
-	for (int i = 0; i < 256; i++) {
-		int height = (int)histoImg[i] / maxnumber * 256;
-		rectangle(
-			histogram,
-			Point(i, 256),
-			Point(1 + i, 256 - height),
-			Scalar(128, 128, 128),
-			-1
-		);
-	}
-	for (int i = 0; i < lvl; i++) {
-		rectangle(
-			histogram,
-			Point(realStep[i], 256),
-			Point(1 + realStep[i], 1),
-			Scalar(0, 0, 0),
-			-1
-		);
-	}
+	createHisto(histoImg, maxnumber, realStep, dmax, disp);
 
 	imshow("Otsu", changed);
 	imshow("Histo", histogram);
@@ -214,7 +317,7 @@ int main(int argc, char** argv)
 
 	/// Create Windows
 	namedWindow("Histo", 1);
-	slider = 1;
+	slider = 0;
 
 	/// Create Trackbars
 	char TrackbarName[50];

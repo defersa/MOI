@@ -1,3 +1,4 @@
+add_subdirectory(tutorials)
 add_subdirectory(cv_histo)
 add_subdirectory(cv_histo_slider)
 add_subdirectory(cv_check)
