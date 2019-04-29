@@ -89,7 +89,7 @@ vector<int> multiOtsu(vector<double> &his, int levels, vector<double> &maxd) {
 	return thresholds;
 }
 
-vector<vector<double>> makeLines(vector<int> th, vector<double> his, int levels) {
+vector<vector<double>> makeLines(vector<int> th, vector<double> &his, int levels) {
 
 	vector<vector<double>> lines((levels + 1), vector<double>(256, 0));
 	double MT = 0;
@@ -102,9 +102,9 @@ vector<vector<double>> makeLines(vector<int> th, vector<double> his, int levels)
 
 		int start = 0;
 		if (i != 0)
-			start = th[i - 1];
+			start = th[i - 1] + 1;
 
-		int end = 256;
+		int end = 255;
 		if (i != levels - 1)
 			end = th[i + 1];
 
@@ -112,36 +112,58 @@ vector<vector<double>> makeLines(vector<int> th, vector<double> his, int levels)
 		double W = 0;
 		double MK = 0;
 
-		for (int j = start; j < end; j++) {
+		double Wmax = 0;
+		double MKmax = 0;
+	
+		for (int j = start; j <= end; j++) {
+			Wmax += his[j];
+			MKmax += j * his[j];
+		}
+	
+		double sum = 1/0;
+		int nth = 0;
+
+		for (int j = start; j <= end; j++) {
+			
 			W += his[j];
 			MK += j * his[j];
 
-			double M = MK / W;
+			Wmax += -his[j];
+			MKmax += -j * his[j];
+
 			double d = 0;
+			double M = MK / W;
+
+			double dmax = 0;
+			double Mmax = MKmax / Wmax;
+
 
 			for (int k = start; k <= j; k++) {
-				d += (k - M)*(k - M)*his[k] / W;
+				d += (k - M)*(k - M)*his[k]/W;
 			}
+			for (int k = j + 1; k <= end; k++) {
+				dmax += (k - Mmax)*(k - Mmax)*his[k] / Wmax;
+			}
+			if (W == 0) {
+				M = 0;
+				d = 0;
+			}
+			if (Wmax == 0) {
+				Mmax = 0;
+				dmax = 0;
+			}
+
 
 			lines[i + 1][j] += d;
+
+			if(lines[i][j] > dmax || lines[i][j] == 0)
+				lines[i][j] = dmax;
+
+			cout << j << "	" << d*W << "	" << dmax*Wmax << "	" << (d*W + dmax*Wmax) << endl;
 		}
-
-		for (int j = start; j < end; j++) {
-
-			double M = MK / W;
-			double d = 0;
-
-			for (int k = j; k < end; k++) {
-				d += (k - M)*(k - M)*his[k] / W;
-			}
-
-			W += -his[j];
-			MK += -j * his[j];
-
-			if(lines[i][j] > d || lines[i][j] == 0)
-					lines[i][j] = d;
-		}
+		cout << endl;
 	}
+	cout << endl;
 
 	// normalize
 	double max = 0;
@@ -154,12 +176,15 @@ vector<vector<double>> makeLines(vector<int> th, vector<double> his, int levels)
 	}
 	for (int i = 0; i < lines.size(); i++) {
 		for (int j = 0; j < 256; j++) {
-			lines[i][j] = lines[i][j] * 200 / max;
+			if(lines[i][j] != 0)
+				lines[i][j] = lines[i][j] * 200 / max;
 		}
 	}
 
 	return lines;
 }
+
+
 
 void createHisto(vector<double> &his, double MN, vector<int> &rs, vector<double> dmax, vector<vector<double>> disp) {
 
@@ -197,8 +222,8 @@ void createHisto(vector<double> &his, double MN, vector<int> &rs, vector<double>
 		for (int j = 0; j < 255; j++) {
 			line(
 				histogram,
-				Point(j, 256 - (int)disp[i][j]),
-				Point(j + 1, 256 - (int)disp[i][j + 1]),
+				Point(j, 255 - (int)disp[i][j]),
+				Point(j + 1, 255 - (int)disp[i][j + 1]),
 				colors[i],
 				1
 			);
@@ -261,9 +286,6 @@ void on_trackbar(int, void*)
 
 	imshow("Otsu", changed);
 	imshow("Histo", histogram);
-
-	moveWindow("Histo", 40, 200);
-	moveWindow("Otsu", 300, 200);
 }
 
 int otsu(double his[], double sum) {
@@ -317,6 +339,7 @@ int main(int argc, char** argv)
 
 	/// Create Windows
 	namedWindow("Histo", 1);
+	namedWindow("Otsu", 1);
 	slider = 0;
 
 	/// Create Trackbars
@@ -326,6 +349,10 @@ int main(int argc, char** argv)
 	createTrackbar(TrackbarName, "Histo", &slider, sliderMax, on_trackbar);
 	on_trackbar(slider, 0);
 
+
+
+	moveWindow("Histo", 40, 200);
+	moveWindow("Otsu", 300, 200);
 
 	waitKey(0);	
 	return 0; 
